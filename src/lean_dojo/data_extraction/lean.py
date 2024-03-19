@@ -33,28 +33,35 @@ from ..constants import (
     LEAN4_BUILD_DIR,
     LEAN_BUILD_DIR_OLD,
 )
+import os
 
+PURE_OFFLINE_MODE = bool(int(os.environ.get("PURE_OFFLINE_MODE", True)))
 
-GITHUB_ACCESS_TOKEN = os.getenv("GITHUB_ACCESS_TOKEN", None)
-"""GiHub personal access token is optional. 
-If provided, it can increase the rate limit for GitHub API calls.
-"""
+if not PURE_OFFLINE_MODE:
+    GITHUB_ACCESS_TOKEN = os.getenv("GITHUB_ACCESS_TOKEN", None)
+    """GiHub personal access token is optional. 
+    If provided, it can increase the rate limit for GitHub API calls.
+    """
 
-if GITHUB_ACCESS_TOKEN:
-    logger.debug("Using GitHub personal access token for authentication")
-    GITHUB = Github(auth=Auth.Token(GITHUB_ACCESS_TOKEN))
-    GITHUB.get_user().login
+    if GITHUB_ACCESS_TOKEN:
+        logger.debug("Using GitHub personal access token for authentication")
+        GITHUB = Github(auth=Auth.Token(GITHUB_ACCESS_TOKEN))
+        GITHUB.get_user().login
+    else:
+        logger.debug(
+            "Using GitHub without authentication. Don't be surprised if you hit the API rate limit."
+        )
+        GITHUB = Github()
+
+    LEAN4_REPO = GITHUB.get_repo("leanprover/lean4")
+    """The GitHub Repo for Lean 4 itself."""
+
+    LEAN4_NIGHTLY_REPO = GITHUB.get_repo("leanprover/lean4-nightly")
+    """The GitHub Repo for Lean 4 nightly releases."""
 else:
-    logger.debug(
-        "Using GitHub without authentication. Don't be surprised if you hit the API rate limit."
-    )
-    GITHUB = Github()
-
-LEAN4_REPO = GITHUB.get_repo("leanprover/lean4")
-"""The GitHub Repo for Lean 4 itself."""
-
-LEAN4_NIGHTLY_REPO = GITHUB.get_repo("leanprover/lean4-nightly")
-"""The GitHub Repo for Lean 4 nightly releases."""
+    GITHUB = None
+    LEAN4_REPO = None
+    LEAN4_NIGHTLY_REPO = None
 
 _URL_REGEX = re.compile(r"(?P<url>.*?)/*")
 
@@ -485,7 +492,6 @@ class LeanGitRepo:
             )
         info_cache.uses_lean4[(self.url, self.commit)] = uses_lean4
         object.__setattr__(self, "uses_lean4", uses_lean4)
-
         assert uses_lean3 ^ uses_lean4
 
         # Determine the required Lean version, e.g., ``v3.50.3``.
@@ -501,6 +507,9 @@ class LeanGitRepo:
             lean_version = get_lean4_commit_from_config(config)
         info_cache.lean_version[(self.url, self.commit)] = lean_version
         object.__setattr__(self, "lean_version", lean_version)
+
+        object.__setattr__(self, "_packages_dir", self.get_packages_dir())
+        object.__setattr__(self, "_build_dir", self.get_build_dir())
 
     @classmethod
     def from_path(cls, path: Path) -> "LeanGitRepo":
@@ -548,26 +557,32 @@ class LeanGitRepo:
 
     def get_packages_dir(self) -> Path:
         """Return the path to the directory where Lean packages are stored."""
-        if self.uses_lean3:
-            return LEAN3_PACKAGES_DIR
-        else:
-            toolchain = self.get_config("lean-toolchain")
-            v = get_lean4_version_from_config(toolchain["content"])
-            if is_new_version(v):
-                return LEAN4_PACKAGES_DIR
+        if not hasattr(self, "_packages_dir"):
+            if self.uses_lean3:
+                return LEAN3_PACKAGES_DIR
             else:
-                return LEAN4_PACKAGES_DIR_OLD
+                toolchain = self.get_config("lean-toolchain")
+                v = get_lean4_version_from_config(toolchain["content"])
+                if is_new_version(v):
+                    return LEAN4_PACKAGES_DIR
+                else:
+                    return LEAN4_PACKAGES_DIR_OLD
+        else:
+            return self._packages_dir
 
     def get_build_dir(self) -> Path:
-        if self.uses_lean3:
-            return LEAN_BUILD_DIR_OLD
-        else:
-            toolchain = self.get_config("lean-toolchain")
-            v = get_lean4_version_from_config(toolchain["content"])
-            if is_new_version(v):
-                return LEAN4_BUILD_DIR
-            else:
+        if not hasattr(self, "_build_dir"):
+            if self.uses_lean3:
                 return LEAN_BUILD_DIR_OLD
+            else:
+                toolchain = self.get_config("lean-toolchain")
+                v = get_lean4_version_from_config(toolchain["content"])
+                if is_new_version(v):
+                    return LEAN4_BUILD_DIR
+                else:
+                    return LEAN_BUILD_DIR_OLD
+        else:
+            return self._build_dir
 
     def get_dependencies(
         self, path: Union[str, Path, None] = None
