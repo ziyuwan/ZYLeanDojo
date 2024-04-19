@@ -750,6 +750,11 @@ class Theorem:
         return f"{cleanse_string(self.repo.url)}@{cleanse_string(self.repo.commit)}:{cleanse_string(self.file_path.__str__())}:{cleanse_string(self.full_name)}"
 
     @property
+    def uid1(self) -> str:
+        """Unique identifier of the theorem."""
+        return f"{cleanse_string(self.repo.url)}:{cleanse_string(self.full_name)}"
+
+    @property
     def uhash(self) -> str:
         """Unique hash of the theorem."""
         return str(hash(self.uid) ** 2)
