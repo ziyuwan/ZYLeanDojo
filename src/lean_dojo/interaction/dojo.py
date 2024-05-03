@@ -13,6 +13,8 @@ from subprocess import TimeoutExpired
 from dataclasses import dataclass, field
 from typing import Union, Tuple, List, Dict, Any, Optional
 
+import psutil
+
 from ..constants import (
     TMP_DIR,
     LEAN3_PACKAGES_DIR,
@@ -360,6 +362,12 @@ class Dojo:
         try:
             self.proc.wait(timeout=0.5)
         except TimeoutExpired:
+            # Current self.proc.kill() may not kill the lean process.
+            # Acoording to the discussion here, we recuisively kill all its child process.
+            # https://stackoverflow.com/questions/68627577/subprocess-fail-to-kill-make-command
+            parent = psutil.Process(self.proc.pid)
+            for child in parent.children(recursive=True):
+                child.kill()
             self.proc.kill()
 
     def _cleanup_tmp_dir(self) -> None:
